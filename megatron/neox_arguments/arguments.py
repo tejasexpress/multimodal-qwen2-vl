@@ -21,6 +21,7 @@ import logging
 import copy
 import torch
 import argparse
+import getpass
 
 from dataclasses import dataclass
 from typing import List, Dict
@@ -194,8 +195,11 @@ class NeoXArgs(*BASE_CLASSES):
 
                 conf_key_converted = conf_key.replace(
                     "-", "_"
-                )  # TODO remove replace and update configuration files?
+                )
+                if type(conf_value) == str:
+                    conf_value = conf_value.replace("$whoami",getpass.getuser())
                 config[conf_key_converted] = conf_value
+                
 
             # load original config files to save unchanged with checkpoint
             # saving the original config retains comments
@@ -342,17 +346,21 @@ class NeoXArgs(*BASE_CLASSES):
             help="Use DeepSpeed's autotuning feature to optimize certain hyperparameters. For more details refer to documentation here: https://www.deepspeed.ai/tutorials/autotuning/",
         )
 
+        print("parsing the args")
         args_parsed = parser.parse_args()
+        print("finished parsing args")
 
         # Validate user_script exists
         assert os.path.exists(
             args_parsed.user_script
         ), f"User script could not be found: {args_parsed.user_script}"
 
+        print("loading config files")
         # load config files
         conf_files = args_parsed.conf_file
         if args_parsed.conf_dir:
             conf_files = [os.path.join(args_parsed.conf_dir, f) for f in conf_files]
+        print("finished loading config files")
 
         # enables us to pass in `125M` instead of `125M.yml`
         conf_files = [
@@ -368,10 +376,14 @@ class NeoXArgs(*BASE_CLASSES):
             elif k not in ["conf_dir", "conf_file"] and v is not None:
                 overwrite_values[k] = v
 
+        print("hello world")
+        
         # load args
         neox_args = cls.from_ymls(
             paths_to_yml_files=conf_files, overwrite_values=overwrite_values
         )
+        
+        print("random breakpoint")
 
         if neox_args.use_wandb:
             try:
