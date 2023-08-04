@@ -21,6 +21,7 @@ import logging
 import copy
 import torch
 import argparse
+import getpass
 
 from dataclasses import dataclass
 from typing import List, Dict
@@ -194,8 +195,11 @@ class NeoXArgs(*BASE_CLASSES):
 
                 conf_key_converted = conf_key.replace(
                     "-", "_"
-                )  # TODO remove replace and update configuration files?
+                )
+                if type(conf_value) == str:
+                    conf_value = conf_value.replace("$whoami",getpass.getuser())
                 config[conf_key_converted] = conf_value
+                
 
             # load original config files to save unchanged with checkpoint
             # saving the original config retains comments
@@ -368,10 +372,12 @@ class NeoXArgs(*BASE_CLASSES):
             elif k not in ["conf_dir", "conf_file"] and v is not None:
                 overwrite_values[k] = v
 
+        
         # load args
         neox_args = cls.from_ymls(
             paths_to_yml_files=conf_files, overwrite_values=overwrite_values
         )
+        
 
         if neox_args.use_wandb:
             try:
