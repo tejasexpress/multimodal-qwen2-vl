@@ -140,7 +140,7 @@ def forward_model(model, model_inputs, is_pipe_parallel=False) -> torch.Tensor:
         # a) deepspeed pipeline only accepts iterables
         # b) deepspeed pipeline *requires* that you pass in labels for the loss, it's not easy to get around this
         # so we wrap the inputs in an iterable, and pad them (because internally, we get labels as inputs[:, 1:] and inputs as inputs[:, :-1])
-        model_inputs = iter([{"text": F.pad(model_inputs[0], pad=(0, 1))}])
+        model_inputs = iter([{"img":model_inputs[0],"text": F.pad(model_inputs[1], pad=(0, 1))}])
 
         # set num microbatches to 1 at inference time
         micro_batches_before = model.micro_batches
@@ -186,6 +186,7 @@ def stop_tokens_in_completion(stop_tokens, context_tokens, batch_index, current_
 def stream_tokens(
     neox_args,
     model,
+    images,
     context_tokens: List[List[int]],
     eos_token_id: int = None,
     maximum_tokens: int = None,
@@ -245,6 +246,11 @@ def stream_tokens(
     # Make sure context tokens + start tokens are the same across all ranks
     token_generation_start_index = torch.cuda.LongTensor(context_lengths)
     torch.distributed.broadcast(
+        images,
+        mpu.get_model_parallel_src_rank(),
+        group=mpu.get_model_parallel_group(),
+    )
+    torch.distributed.broadcast(
         context_tokens,
         mpu.get_model_parallel_src_rank(),
         group=mpu.get_model_parallel_group(),
@@ -286,6 +292,7 @@ def stream_tokens(
         while token_index_to_generate <= last_token_index_to_generate:
             if recompute:  # recompute all tokens
                 model_inputs = (
+                    images,
                     context_tokens,
                     position_ids,
                     attention_mask,
@@ -308,6 +315,7 @@ def stream_tokens(
                     ].view(batch_size, -1)
 
                 model_inputs = (
+                    images,
                     tokens_to_use,  # input_ids
                     positions_to_use,  # position_ids
                     attention_mask,  # attention_mask
@@ -395,6 +403,7 @@ def stream_tokens(
 def generate_samples_from_prompt(
     neox_args,
     model,
+    images,
     text: Union[List[str], str],
     eos_token_id: int = None,
     maximum_tokens: int = 64,
@@ -486,6 +495,7 @@ def generate_samples_from_prompt(
         ) in stream_tokens(
             neox_args=neox_args,
             model=model,
+            images=images,
             context_tokens=[context_tokens],
             eos_token_id=eos_token_id,
             maximum_tokens=maximum_tokens,
@@ -615,6 +625,7 @@ def generate_samples_input_from_file(
     generated_texts = generate_samples_from_prompt(
         neox_args=neox_args,
         model=model,
+        images=images,
         text=prompts,
         eos_token_id=eos_token_id,
         maximum_tokens=maximum_tokens,
@@ -677,9 +688,11 @@ def generate_samples_unconditional(
 
     print_rank_0("generate_samples_unconditional() generating...")
     assert number_of_samples > 0, "number_of_samples must be > 0"
+    images=torch.tensor([number_of_samples,224,224])
     generated_texts = generate_samples_from_prompt(
         neox_args=neox_args,
         model=model,
+        images=images,
         text=["" for _ in range(number_of_samples)],
         eos_token_id=eos_token_id,
         maximum_tokens=maximum_tokens,
@@ -783,6 +796,7 @@ def generate_samples_interactive(
         ) in stream_tokens(
             neox_args=neox_args,
             model=model,
+            images=images,
             context_tokens=[context_tokens],
             eos_token_id=eos_token_id,
             maximum_tokens=maximum_tokens,
