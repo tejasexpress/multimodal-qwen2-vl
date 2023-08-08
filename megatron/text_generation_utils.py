@@ -47,6 +47,7 @@ def get_batch(neox_args, context_tokens: torch.Tensor):
     attention_mask, _, position_ids = get_ltor_masks_and_position_ids(
         data=tokens,
         eod_token=neox_args.tokenizer.eod,
+        pad_token=neox_args.tokenizer.pad_id,
         eod_mask_loss=neox_args.eod_mask_loss,
     )
     return tokens, attention_mask, position_ids
@@ -237,6 +238,7 @@ def stream_tokens(
 
     # convert to tensor and broadcast
     context_tokens = torch.cuda.LongTensor(context_tokens)
+    images = images.unsqueeze(0).contiguous().cuda()
     if stop_tokens:
         if len(stop_tokens) > 0 and type(stop_tokens[0]) is not list:
             stop_tokens = [stop_tokens]
@@ -462,13 +464,14 @@ def generate_samples_from_prompt(
             terminate_runs = 1
         else:
             raw_text = text[input_pos]
+            image = images[input_pos]
             input_pos += 1
 
             if raw_text == "":
                 context_tokens = [eos_token_id]
             else:
-                context_tokens = neox_args.tokenizer.tokenize(raw_text)
-            context_length = len(context_tokens)
+                context_tokens = neox_args.tokenizer.tokenize(raw_text, pad=False, tensor=False)
+            context_length = len(context_tokens) 
 
             if context_length >= (neox_args.seq_length // 2):
                 print_rank_0(
@@ -478,7 +481,7 @@ def generate_samples_from_prompt(
                     "max sequence length)!",
                 )
         if not is_mp_rank_0():
-            context_tokens = neox_args.tokenizer.tokenize("EMPTY TEXT")
+            context_tokens = neox_args.tokenizer.tokenize("EMPTY TEXT", pad=False, tensor=False)
             context_length = len(context_tokens)
             terminate_runs = 0
 
@@ -495,7 +498,7 @@ def generate_samples_from_prompt(
         ) in stream_tokens(
             neox_args=neox_args,
             model=model,
-            images=images,
+            images=image,
             context_tokens=[context_tokens],
             eos_token_id=eos_token_id,
             maximum_tokens=maximum_tokens,
@@ -604,10 +607,20 @@ def generate_samples_input_from_file(
         "generate_samples_input_from_file() loading input from {}".format(input_file)
     )
     with open(input_file, "r", encoding="utf-8") as f:
-        prompts = f.read()
-        prompts = prompts.split(prompt_end)
-    prompts = [p.strip() for p in prompts]
-    prompts = [p for p in prompts if len(p) > 0]
+        prompts =[json.loads(l) for l in f.readlines()]
+    image_paths = [line['image'] for line in prompts] 
+    texts = [line['text'] for line in prompts] 
+
+    from megatron.data.transforms import get_clip_transforms
+    preprocess_img = get_clip_transforms(image_size=neox_args.image_size)
+    from PIL import Image
+
+    images = []
+    for image_path in image_paths:
+        image = Image.open(image_path)
+        images.append(preprocess_img(image))
+    images = torch.stack(images)
+
     print_rank_0(
         "generate_samples_input_from_file() prompts loaded: {}".format(len(prompts))
     )
@@ -626,7 +639,7 @@ def generate_samples_input_from_file(
         neox_args=neox_args,
         model=model,
         images=images,
-        text=prompts,
+        text=texts,
         eos_token_id=eos_token_id,
         maximum_tokens=maximum_tokens,
         recompute=recompute,
@@ -688,7 +701,7 @@ def generate_samples_unconditional(
 
     print_rank_0("generate_samples_unconditional() generating...")
     assert number_of_samples > 0, "number_of_samples must be > 0"
-    images=torch.tensor([number_of_samples,224,224])
+    images=torch.ones([number_of_samples,3,224,224]) # init images
     generated_texts = generate_samples_from_prompt(
         neox_args=neox_args,
         model=model,
@@ -769,9 +782,9 @@ def generate_samples_interactive(
                 raw_text += (
                     current_input + "\n"
                 )  # re-add newline since we stripped it on input
-            context_tokens = neox_args.tokenizer.tokenize(raw_text)
+            context_tokens = neox_args.tokenizer.tokenize(raw_text, pad=False, tensor=False)
             if len(context_tokens) == 0:
-                context_tokens = [neox_args.tokenizer.eod]
+                context_tokens = [neox_args.tokenizer.pad_id]
             context_length = len(context_tokens)
             if context_length >= (neox_args.seq_length - 1):
                 print_rank_0(
@@ -781,7 +794,7 @@ def generate_samples_interactive(
                 )
                 terminate_runs = 1
         else:
-            context_tokens = neox_args.tokenizer.tokenize("EMPTY TEXT")
+            context_tokens = neox_args.tokenizer.tokenize("EMPTY TEXT", pad=False, tensor=False)
             context_length = len(context_tokens)
 
         terminate_runs = broadcast_terminate_signal(terminate_runs)
@@ -796,7 +809,7 @@ def generate_samples_interactive(
         ) in stream_tokens(
             neox_args=neox_args,
             model=model,
-            images=images,
+            # images=images,
             context_tokens=[context_tokens],
             eos_token_id=eos_token_id,
             maximum_tokens=maximum_tokens,
