@@ -423,12 +423,12 @@ def get_model(neox_args, use_cache=False):
         # add on mlp
         add_adapters(neox_args,
                     model,
-                    downsample_factor=neox_args.adaper_downsample_factor,
+                    downsample_factor=neox_args.adapter_downsample_factor,
                     location='mlp') 
         ## add on attention
         add_adapters(neox_args,
                     model,
-                    downsample_factor=neox_args.adaper_downsample_factor,
+                    downsample_factor=neox_args.adapter_downsample_factor,
                     location='attention') 
     
     ### soft prompt tuning stuff ###

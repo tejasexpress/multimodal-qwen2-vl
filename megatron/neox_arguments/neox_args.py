@@ -95,11 +95,16 @@ class NeoXArgsModel(NeoXArgsTemplate):
     add adapters on model transformer mlp and attention.
     """
     
-    adaper_downsample_factor: int = 4
+    adapter_downsample_factor: int = 4
     """
     Downsample factor for adapter's linear layers
     """
 
+    do_lora: bool = False
+    """
+    Should we be doing a full lora instead
+    """
+    
     precision: Literal["fp16", "fp32", "bfloat16"] = None
     """
     description of the used precision, either one of fp16 or fp32 (and in the future bf16).
