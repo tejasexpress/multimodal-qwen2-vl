@@ -243,7 +243,7 @@ class HFTokenizer(AbstractTokenizer):
     def inv_vocab(self):
         return self.tokenizer.decoder
 
-    def tokenize(self, texts: Union[str, List[str]], pad=True, tensor=True, context_length=2048):
+    def tokenize(self, texts: Union[str, List[str]], pad=True, tensor=True):
         if isinstance(texts, str):
             texts = [texts]
         texts = [whitespace_clean(basic_clean(text)) for text in texts]
