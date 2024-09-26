@@ -1,6 +1,73 @@
 [![GitHub issues](https://img.shields.io/github/issues/EleutherAI/gpt-neox)](https://github.com/EleutherAI/gpt-neox/issues)
 [<img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights & Biases monitoring" height=20>](https://wandb.ai/eleutherai/neox)
 
+# Running and Setup on Frontier
+
+```bash
+pip install -r requirements/requirements-magma.txt
+```
+
+### Download a random webdataset with images
+
+```python
+from huggingface_hub import snapshot_download
+#PLEASE MAKE SURE IMAGE HEADER IS one of jpg;png;jpeg;webp and text header is txt
+snapshot_download(
+    repo_id="laion/conceptual-captions-12m-webdataset",
+    repo_type="dataset",
+    local_dir="./laion_test_12m_webdataset",
+    allow_patterns=["data/0000[0-9].tar"],
+    local_dir_use_symlinks=False,
+    use_auth_token=False
+)
+```
+### Test webdataset loader
+
+```python
+import sys
+from megatron.neox_arguments import NeoXArgs
+from megatron.data.data_utils import build_web_train_valid_test_data_iterators
+from megatron.initialize import initialize_megatron
+
+ymls = [r'/lustre/orion/csc605/scratch/tejasexpress/multimodal-qwen2-vl/configs/20B.yml']
+
+neox_args = NeoXArgs.from_ymls(ymls)
+#neox_args.configure_distributed_args()
+neox_args.build_tokenizer()
+
+neox_args.train_data_paths = [r'/lustre/orion/csc605/scratch/tejasexpress/laion_test_12m_webdataset/data/{00000..00004}.tar']
+neox_args.valid_data_paths = [r'/lustre/orion/csc605/scratch/tejasexpress/laion_test_12m_webdataset/data/{00005..00009}.tar']
+neox_args.world_size = 1
+
+from megatron.data.webdataset import get_wds_data
+
+train_data = get_wds_data(neox_args,is_train=True)
+train_dataloader = train_data.dataloader
+first_batch = next(iter(train_dataloader))
+
+print('start get data')
+i=0
+for batch in train_dataloader:
+	i += 1
+	print(i)
+	print(batch)
+	if i % 10==0:
+		print(f"sample {i} times done")
+		break
+print(f'total sample number is {i}')
+```
+you need to add the following to use the provided image encoders with frontier
+```bash
+MIOPEN_USER_DB_PATH= "some path in scratch"
+
+export MIOPEN_DEBUG_DISABLE_SQL_WAL=1
+
+export MIOPEN_DISABLE_CACHE=1
+```
+---
+---
+---
+
 # GPT-NeoX
 
 This repository records [EleutherAI](https://www.eleuther.ai)'s library for training large-scale language models on GPUs. Our current framework is based on NVIDIA's [Megatron Language Model](https://github.com/NVIDIA/Megatron-LM) and has been augmented with techniques from [DeepSpeed](https://www.deepspeed.ai) as well as some novel optimizations. We aim to make this repo a centralized and accessible place to gather techniques for training large-scale autoregressive language models, and accelerate research into large-scale training.
