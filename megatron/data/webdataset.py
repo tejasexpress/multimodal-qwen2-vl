@@ -112,7 +112,7 @@ def count_samples(dataloader):
     return n_elements, n_batches
 
 def filter_no_caption_or_no_image(sample):
-    has_caption = ('txt' in sample)
+    has_caption = ('txt' in sample) 
     has_image = ('png' in sample or 'jpg' in sample or 'jpeg' in sample or 'webp' in sample)
     return has_caption and has_image
 
@@ -121,6 +121,7 @@ def log_and_continue(exn):
     """Call in an exception handler to ignore any exception, issue a warning, and continue."""
     logging.warning(f'Handling webdataset error ({repr(exn)}). Ignoring.')
     return True
+
 
 def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, handler=None):
     """Return function over iterator that groups key, value pairs into samples.
@@ -131,6 +132,9 @@ def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, h
     current_sample = None
     for filesample in data:
         assert isinstance(filesample, dict)
+        fname = filesample.get("fname")
+        if fname is None:
+            continue
         fname, value = filesample["fname"], filesample["data"]
         prefix, suffix = keys(fname)
         if prefix is None:
@@ -286,12 +290,16 @@ def get_wds_data(args, is_train, epoch=0, floor=False):
     
     assert input_shards is not None
 
+    if not input_weights:
+        input_weights = [1.0]
+
     resampled = getattr(args, 'dataset_resampled', False)
 
+    train_iters = args.train_iters
     num_shards = None
     if is_train:
         if args.train_num_samples is not None:
-            num_samples = args.train_num_samples
+            num_samples = train_iters * args.train_batch_size
         else:
             num_samples, num_shards = get_dataset_size(input_shards)
             if not num_samples:
@@ -300,15 +308,15 @@ def get_wds_data(args, is_train, epoch=0, floor=False):
                     'Please specify it via `--train-num-samples` if no dataset length info is present.')
     else:
         # Eval will just exhaust the iterator if the size is not specified.
-        num_samples = args.val_num_samples or 0 
+        num_samples =  eval_iters = (train_iters // args.eval_interval + 1) * args.eval_iters
     weights, weighted_num_samples = get_normalized_weights_and_num_samples(input_weights, num_samples)
     shared_epoch = SharedEpoch(epoch=epoch)  # create a shared epoch store to sync epoch to dataloader worker proc
-    
     if resampled:
         complete_url_list = []
         complete_weights = []
         for i, (urls, weights) in enumerate(zip(input_shards, weights)):
             current_url_list = expand_urls(urls)[0]
+            print(current_url_list)
             complete_url_list.extend(current_url_list)
             per_url_weight = weights / len(current_url_list)
             complete_weights.extend([per_url_weight] * len(current_url_list))
@@ -321,7 +329,12 @@ def get_wds_data(args, is_train, epoch=0, floor=False):
     else:
         assert args.train_data_upsampling_factors is None,\
            "--train_data_upsampling_factors is only supported when sampling with replacement (with --dataset-resampled)."
-        pipeline = [wds.SimpleShardList(input_shards)]
+        expanded_shards = []
+        for urls in input_shards:
+            current_url = expand_urls(urls)[0]
+            expanded_shards.extend(current_url)
+        print(expanded_shards)
+        pipeline = [wds.SimpleShardList(expanded_shards)]
 
     # at this point we have an iterator over all the shards
     if is_train:
@@ -363,8 +376,8 @@ def get_wds_data(args, is_train, epoch=0, floor=False):
     pipeline.extend([
         wds.select(filter_no_caption_or_no_image),
         wds.decode("pilrgb", handler=log_and_continue),
-        wds.rename(image="jpg;png;jpeg;webp", text="txt"),
-        wds.map_dict(image=preprocess_img,  text=lambda text: tokenize(text)[0]),
+        wds.rename(image="jpg;png;jpeg;webp;", text="txt"),
+        wds.map_dict(image= preprocess_img,  text=lambda text: tokenize(text)[0]),
         wds.to_tuple("image", "text"),
         wds.batched(args.batch_size, collation_fn=image_text_dict_collation_fn, partial=not is_train)
     ])
@@ -373,7 +386,7 @@ def get_wds_data(args, is_train, epoch=0, floor=False):
 
     if is_train:
         if not resampled:
-            num_shards = num_shards or len(expand_urls(input_shards)[0])
+            num_shards = num_shards or sum(len(expand_urls(urls)[0]) for urls in input_shards)
             assert num_shards >= args.num_workers * args.world_size, 'number of shards must be >= total workers'
         # roll over and repeat a few samples to get same number of full batches on each node
         round_fn = math.floor if floor else math.ceil

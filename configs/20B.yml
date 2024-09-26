@@ -9,7 +9,6 @@
   "load": "./20B_checkpoints",
 
   # If finetuning, edit the following to the location of your finetuning dataset:
-  "data-path": "./data/pile_20B_tokenizer/pile_20B_tokenizer_text_document",
 
   # parallelism settings ( you will want to change these based on your cluster setup, ideally scheduling pipeline stages
   # across the node boundaries )
@@ -59,8 +58,8 @@
   },
 
   # batch / data settings (assuming 96 GPUs)
-  "train_micro_batch_size_per_gpu": 4,
-  "gradient_accumulation_steps": 32,
+  "train_micro_batch_size_per_gpu": 10,
+  "gradient_accumulation_steps": 10,
   "data-impl": "mmap",
   "split": "995,4,1",
 
@@ -88,8 +87,8 @@
     },
 
   # misc. training settings
-  "train-iters": 150000,
-  "lr-decay-iters": 150000,
+  "train-iters": 150,
+  "lr-decay-iters": 150,
 
   "distributed-backend": "nccl",
   "lr-decay-style": "cosine",

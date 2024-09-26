@@ -58,6 +58,7 @@ def initialize_megatron(neox_args, allow_no_cuda=False):
         neox_args.scaled_upper_triang_masked_softmax_fusion
         or neox_args.scaled_masked_softmax_fusion
     ):
+        fused_kernels.load(neox_args)
         fused_kernels.load_fused_kernels()
 
     if neox_args.lazy_mpu_init:
@@ -152,6 +153,7 @@ def _initialize_distributed(neox_args):
             distributed_port=os.getenv("MASTER_PORT", "6000"),
             verbose=True,
         )
+        
         neox_args.rank = deepspeed.comm.get_rank()
         neox_args.world_size = deepspeed.comm.get_world_size()
 

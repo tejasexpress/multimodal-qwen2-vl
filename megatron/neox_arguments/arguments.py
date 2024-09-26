@@ -428,8 +428,10 @@ class NeoXArgs(*BASE_CLASSES):
             help="Only need this (at this stage) for autotuning",
         )
         args_parsed, _ = parser.parse_known_args()
-        with open(args_parsed.megatron_config) as jsonfile:
-            megatron_config = json.load(jsonfile)
+        megatron_config = json.loads(
+            base64.urlsafe_b64decode(args_parsed.megatron_config).decode("utf-8")
+        )
+        
         if args_parsed.deepspeed_config is not None:
             overwrite_values = cls.set_up_autotuning(
                 args_parsed.deepspeed_config, overwrite_values
@@ -565,16 +567,16 @@ class NeoXArgs(*BASE_CLASSES):
             ).decode("utf-8")
             args_list.append(encoded_ds_config)
 
-        megatron_fp = cwd / Path(f"megatron_config_{os.environ['LSB_JOBID']}.json")
         # get all config values
         args_list.append("--megatron_config")
-        args_list.append(str(megatron_fp))
+        
         neox_args = self.get_parent_class_value_dict(
             *self.__class__.__bases__, only_non_defaults=True
         )
-        if self.rank == 0:
-            with open(megatron_fp, mode="w") as megafile:
-                json.dump(neox_args, megafile)
+        encoded_mega_config = base64.urlsafe_b64encode(
+            json.dumps(neox_args).encode("utf-8")
+        ).decode("utf-8")
+        args_list.append(str(encoded_mega_config))
         return args_list
 
     ############################################################################################################################
@@ -740,7 +742,14 @@ class NeoXArgs(*BASE_CLASSES):
         if self.deepspeed_slurm:
             os.environ["LOCAL_RANK"] = os.environ["SLURM_LOCALID"]
             os.environ["RANK"] = os.environ["SLURM_PROCID"]
-            os.environ["WORLD_SIZE"] = os.environ["SLURM_NTASKS"]
+            os.environ["WORLD_SIZE"] = (
+                os.environ["SLURM_NTASKS"]
+                if os.environ.get("SLURM_NTASKS") is not None
+                else str(
+                    int(os.environ["SLURM_NNODES"])
+                    * int(os.environ["SLURM_NTASKS_PER_NODE"])
+                )
+            )
 
         self.update_value("local_rank", int(os.getenv("LOCAL_RANK", "0")))
         self.update_value("rank", int(os.getenv("RANK", "0")))

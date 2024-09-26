@@ -1,7 +1,4 @@
-# Copyright (c) 2024, EleutherAI
-# This file is based on code by the authors denoted below and has been modified from its original version.
-#
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,15 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# This file has been modified from its original version
-#
 
 import os
 import pathlib
 import subprocess
+
 import torch
 from torch.utils import cpp_extension
+from pathlib import Path
+
+srcpath = Path(__file__).parent.absolute()
 
 # Setting this param to a list has a problem of generating different
 # compilation commands (with different order of architectures) and
@@ -31,9 +29,7 @@ from torch.utils import cpp_extension
 # extra_cuda_cflags below
 os.environ["TORCH_CUDA_ARCH_LIST"] = ""
 
-
 def load(neox_args=None):
-
     # Check if cuda 11 is installed for compute capability 8.0
     cc_flag = []
     if torch.version.hip is None:
@@ -86,7 +82,7 @@ def load(neox_args=None):
             ],
             extra_cuda_cflags=extra_cuda_cflags,
             extra_include_paths=extra_include_paths,
-            verbose=verbose,
+            verbose=True,
         )
 
     # ==============
@@ -168,13 +164,12 @@ def load_fused_kernels():
     try:
         import scaled_upper_triang_masked_softmax_cuda
         import scaled_masked_softmax_cuda
-        import fused_rotary_positional_embedding
     except (ImportError, ModuleNotFoundError) as e:
         print("\n")
         print(e)
         print("=" * 100)
         print(
-            f"ERROR: Fused kernels configured but not properly installed. Please run `from megatron.fused_kernels import load()` then `load()` to load them correctly"
+            f'ERROR: Fused kernels configured but not properly installed. Please run `pip install {str(srcpath)}` to install them'
         )
         print("=" * 100)
         exit()
